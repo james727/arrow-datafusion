@@ -18,7 +18,7 @@
 //! Eliminate common sub-expression.
 
 use crate::error::Result;
-use crate::execution::context::ExecutionProps;
+use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{Filter, Projection, Window};
 use crate::logical_plan::{
     col,
@@ -60,6 +60,7 @@ impl OptimizerRule for CommonSubexprEliminate {
         &self,
         plan: &LogicalPlan,
         execution_props: &ExecutionProps,
+        _: &ExecutionContextState,
     ) -> Result<LogicalPlan> {
         optimize(plan, execution_props)
     }
@@ -647,7 +648,7 @@ mod test {
     fn assert_optimized_plan_eq(plan: &LogicalPlan, expected: &str) {
         let optimizer = CommonSubexprEliminate {};
         let optimized_plan = optimizer
-            .optimize(plan, &ExecutionProps::new())
+            .optimize(plan, &ExecutionProps::new(), &ExecutionContextState::new())
             .expect("failed to optimize plan");
         let formatted_plan = format!("{:?}", optimized_plan);
         assert_eq!(formatted_plan, expected);

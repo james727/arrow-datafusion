@@ -18,7 +18,7 @@
 //! Query optimizer traits
 
 use crate::error::Result;
-use crate::execution::context::ExecutionProps;
+use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::LogicalPlan;
 
 /// `OptimizerRule` transforms one ['LogicalPlan'] into another which
@@ -30,6 +30,7 @@ pub trait OptimizerRule {
         &self,
         plan: &LogicalPlan,
         execution_props: &ExecutionProps,
+        execution_state: &ExecutionContextState,
     ) -> Result<LogicalPlan>;
 
     /// A human readable name for this optimizer rule

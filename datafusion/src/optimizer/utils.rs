@@ -18,7 +18,7 @@
 //! Collection of utility functions that are leveraged by the query optimizer rules
 
 use super::optimizer::OptimizerRule;
-use crate::execution::context::ExecutionProps;
+use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{
     Aggregate, Analyze, Extension, Filter, Join, Projection, Sort, Window,
 };
@@ -104,12 +104,13 @@ pub fn optimize_children(
     optimizer: &impl OptimizerRule,
     plan: &LogicalPlan,
     execution_props: &ExecutionProps,
+    execution_state: &ExecutionContextState,
 ) -> Result<LogicalPlan> {
     let new_exprs = plan.expressions();
     let new_inputs = plan
         .inputs()
         .into_iter()
-        .map(|plan| optimizer.optimize(plan, execution_props))
+        .map(|plan| optimizer.optimize(plan, execution_props, execution_state))
         .collect::<Result<Vec<_>>>()?;
 
     from_plan(plan, &new_exprs, &new_inputs)

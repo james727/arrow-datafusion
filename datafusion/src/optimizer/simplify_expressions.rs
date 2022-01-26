@@ -144,6 +144,7 @@ impl OptimizerRule for SimplifyExpressions {
         &self,
         plan: &LogicalPlan,
         execution_props: &ExecutionProps,
+        execution_state: &ExecutionContextState,
     ) -> Result<LogicalPlan> {
         // We need to pass down the all schemas within the plan tree to `optimize_expr` in order to
         // to evaluate expression types. For example, a projection plan's schema will only include
@@ -157,7 +158,7 @@ impl OptimizerRule for SimplifyExpressions {
         let new_inputs = plan
             .inputs()
             .iter()
-            .map(|input| self.optimize(input, execution_props))
+            .map(|input| self.optimize(input, execution_props, execution_state))
             .collect::<Result<Vec<_>>>()?;
 
         let expr = plan
@@ -1401,7 +1402,7 @@ mod tests {
     fn assert_optimized_plan_eq(plan: &LogicalPlan, expected: &str) {
         let rule = SimplifyExpressions::new();
         let optimized_plan = rule
-            .optimize(plan, &ExecutionProps::new())
+            .optimize(plan, &ExecutionProps::new(), &ExecutionContextState::new())
             .expect("failed to optimize plan");
         let formatted_plan = format!("{:?}", optimized_plan);
         assert_eq!(formatted_plan, expected);
@@ -1625,7 +1626,7 @@ mod tests {
         };
 
         let err = rule
-            .optimize(plan, &execution_props)
+            .optimize(plan, &execution_props, &ExecutionContextState::new())
             .expect_err("expected optimization to fail");
 
         err.to_string()
@@ -1641,7 +1642,7 @@ mod tests {
         };
 
         let optimized_plan = rule
-            .optimize(plan, &execution_props)
+            .optimize(plan, &execution_props, &ExecutionContextState::new())
             .expect("failed to optimize plan");
         return format!("{:?}", optimized_plan);
     }

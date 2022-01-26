@@ -22,6 +22,7 @@
 pub mod common_subexpr_eliminate;
 pub mod eliminate_limit;
 pub mod filter_push_down;
+pub mod join_rewrite;
 pub mod limit_push_down;
 pub mod optimizer;
 pub mod projection_push_down;

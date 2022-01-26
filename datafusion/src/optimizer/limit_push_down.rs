@@ -19,7 +19,7 @@
 //! It will push down through projection, limits (taking the smaller limit)
 use super::utils;
 use crate::error::Result;
-use crate::execution::context::ExecutionProps;
+use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::Projection;
 use crate::logical_plan::{Limit, TableScan};
 use crate::logical_plan::{LogicalPlan, Union};
@@ -151,6 +151,7 @@ impl OptimizerRule for LimitPushDown {
         &self,
         plan: &LogicalPlan,
         execution_props: &ExecutionProps,
+        _: &ExecutionContextState,
     ) -> Result<LogicalPlan> {
         limit_push_down(self, None, plan, execution_props)
     }
@@ -167,11 +168,12 @@ mod test {
         logical_plan::{col, max, LogicalPlan, LogicalPlanBuilder},
         test::*,
     };
+    use regex::internal::Exec;
 
     fn assert_optimized_plan_eq(plan: &LogicalPlan, expected: &str) {
         let rule = LimitPushDown::new();
         let optimized_plan = rule
-            .optimize(plan, &ExecutionProps::new())
+            .optimize(plan, &ExecutionProps::new(), &ExecutionContextState::new())
             .expect("failed to optimize plan");
         let formatted_plan = format!("{:?}", optimized_plan);
         assert_eq!(formatted_plan, expected);

@@ -19,7 +19,7 @@
 //! loaded into memory
 
 use crate::error::{DataFusionError, Result};
-use crate::execution::context::ExecutionProps;
+use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{
     Aggregate, Analyze, Join, Projection, TableScan, Window,
 };
@@ -47,6 +47,7 @@ impl OptimizerRule for ProjectionPushDown {
         &self,
         plan: &LogicalPlan,
         execution_props: &ExecutionProps,
+        _: &ExecutionContextState,
     ) -> Result<LogicalPlan> {
         // set of all columns refered by the plan (and thus considered required by the root)
         let required_columns = plan
@@ -913,6 +914,6 @@ mod tests {
 
     fn optimize(plan: &LogicalPlan) -> Result<LogicalPlan> {
         let rule = ProjectionPushDown::new();
-        rule.optimize(plan, &ExecutionProps::new())
+        rule.optimize(plan, &ExecutionProps::new(), &ExecutionContextState::new())
     }
 }
