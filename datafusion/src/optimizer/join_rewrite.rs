@@ -17,7 +17,7 @@
 use crate::error::Result;
 use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{Filter, Join};
-use crate::logical_plan::{col, Column, DFSchema, DFSchemaRef, JoinType, Operator};
+use crate::logical_plan::{Column, DFSchema, DFSchemaRef, JoinType, Operator};
 use crate::logical_plan::{Expr, LogicalPlan};
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
@@ -163,8 +163,8 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
         {
             JoinType::Inner
         }
-        JoinType::Full if left_has_null_removing_filter => JoinType::Right,
-        JoinType::Full if right_has_null_removing_filter => JoinType::Left,
+        JoinType::Full if left_has_null_removing_filter => JoinType::Left,
+        JoinType::Full if right_has_null_removing_filter => JoinType::Right,
         jt => jt,
     };
 

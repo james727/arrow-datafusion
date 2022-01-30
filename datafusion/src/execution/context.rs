@@ -78,6 +78,7 @@ use crate::physical_optimizer::repartition::Repartition;
 
 use crate::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use crate::logical_plan::plan::Explain;
+use crate::optimizer::join_rewrite::JoinRewrite;
 use crate::optimizer::single_distinct_to_groupby::SingleDistinctToGroupBy;
 use crate::physical_plan::planner::DefaultPhysicalPlanner;
 use crate::physical_plan::udf::ScalarUDF;
@@ -926,6 +927,7 @@ impl Default for ExecutionConfig {
                 Arc::new(FilterPushDown::new()),
                 Arc::new(LimitPushDown::new()),
                 Arc::new(SingleDistinctToGroupBy::new()),
+                Arc::new(JoinRewrite::new()),
             ],
             physical_optimizers: vec![
                 Arc::new(AggregateStatistics::new()),
