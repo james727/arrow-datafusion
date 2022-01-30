@@ -168,7 +168,6 @@ mod test {
         logical_plan::{col, max, LogicalPlan, LogicalPlanBuilder},
         test::*,
     };
-    use regex::internal::Exec;
 
     fn assert_optimized_plan_eq(plan: &LogicalPlan, expected: &str) {
         let rule = LimitPushDown::new();
