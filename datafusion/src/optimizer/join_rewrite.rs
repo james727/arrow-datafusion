@@ -17,7 +17,7 @@
 use crate::error::Result;
 use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{Filter, Join};
-use crate::logical_plan::{Column, DFSchema, DFSchemaRef, JoinType, Operator};
+use crate::logical_plan::{Column, DFSchemaRef, JoinType, Operator};
 use crate::logical_plan::{Expr, LogicalPlan};
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
@@ -30,6 +30,22 @@ use arrow::record_batch::RecordBatch;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// Optimizer that takes advantage of predicates that filter nulls out to rewrite outer joins in a
+/// more efficient way. For example, in the following query the t2.y IS NULL filter removes all
+/// possible null rows produced by the left join:
+///
+///   SELECT t1.x, t2.y
+///   FROM t1 LEFT JOIN t2 ON t1.x = t2.y
+///   WHERE t2.y IS NULL
+///
+/// Thus, this query is rewritten as:
+///
+///   SELECT t1.x, t2.y
+///   FROM t1 INNER JOIN t2 ON t1.x = t2.y
+///   WHERE t2.y IS NULL
+///
+/// Rewriting joins in this fashion enables more efficient join algorithms and further optimizations
+/// to the plan (e.g. - pushing predicates past an inner join).
 #[derive(Default)]
 pub struct JoinRewrite {}
 
@@ -90,26 +106,17 @@ fn split_members(predicate: &Expr) -> Vec<&Expr> {
     }
 }
 
-fn get_schema_columns(schema: &DFSchema) -> HashSet<Column> {
-    schema
-        .fields()
-        .iter()
-        .map(|f| {
-            [
-                f.qualified_column(),
-                // we need to push down filter using unqualified column as well
-                f.unqualified_column(),
-            ]
-        })
-        .flatten()
-        .collect::<HashSet<_>>()
-}
-
 fn join_side_has_null_removing_filter(
     predicates: &Vec<&Expr>,
     side: &LogicalPlan,
 ) -> bool {
-    let side_columns = get_schema_columns(side.schema());
+    let side_columns = side
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| [f.qualified_column(), f.unqualified_column()])
+        .flatten()
+        .collect::<HashSet<_>>();
 
     let mut null_removing_filters = vec![];
     predicates
@@ -155,7 +162,7 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
     let right_has_null_removing_filter =
         join_side_has_null_removing_filter(&all_predicates, right);
 
-    let new_join_type = match join.join_type {
+    let new_join_type = match join_type {
         JoinType::Right if right_has_null_removing_filter => JoinType::Inner,
         JoinType::Left if left_has_null_removing_filter => JoinType::Inner,
         JoinType::Full
@@ -165,7 +172,7 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
         }
         JoinType::Full if left_has_null_removing_filter => JoinType::Left,
         JoinType::Full if right_has_null_removing_filter => JoinType::Right,
-        jt => jt,
+        jt => jt.clone(),
     };
 
     Ok(LogicalPlan::Filter(Filter {
