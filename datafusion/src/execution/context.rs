@@ -822,9 +822,17 @@ impl ExecutionContext {
 
         let mut new_plan = plan.clone();
         debug!("Logical plan:\n {:?}", plan);
-        for optimizer in optimizers {
-            new_plan = optimizer.optimize(&new_plan, execution_props, &state)?;
-            observer(&new_plan, optimizer.as_ref());
+        loop {
+            let old_plan = new_plan.clone();
+            for optimizer in optimizers {
+                new_plan = optimizer.optimize(&new_plan, execution_props, &state)?;
+                observer(&new_plan, optimizer.as_ref());
+            }
+            if old_plan.display_indent().to_string()
+                == new_plan.display_indent().to_string()
+            {
+                break;
+            }
         }
         debug!("Optimized logical plan:\n {:?}", new_plan);
         Ok(new_plan)
