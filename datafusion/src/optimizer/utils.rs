@@ -514,6 +514,24 @@ pub fn rewrite_expression(expr: &Expr, expressions: &[Expr]) -> Result<Expr> {
     }
 }
 
+/// converts "A AND B AND C" => [A, B, C]
+pub fn split_members<'a>(predicate: &'a Expr, predicates: &mut Vec<&'a Expr>) {
+    match predicate {
+        Expr::BinaryExpr {
+            right,
+            op: Operator::And,
+            left,
+        } => {
+            split_members(left, predicates);
+            split_members(right, predicates);
+        }
+        Expr::Alias(expr, _) => {
+            split_members(expr, predicates);
+        }
+        other => predicates.push(other),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

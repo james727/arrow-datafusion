@@ -158,24 +158,6 @@ fn issue_filters(
     push_down(&state, &plan)
 }
 
-/// converts "A AND B AND C" => [A, B, C]
-fn split_members<'a>(predicate: &'a Expr, predicates: &mut Vec<&'a Expr>) {
-    match predicate {
-        Expr::BinaryExpr {
-            right,
-            op: Operator::And,
-            left,
-        } => {
-            split_members(left, predicates);
-            split_members(right, predicates);
-        }
-        Expr::Alias(expr, _) => {
-            split_members(expr, predicates);
-        }
-        other => predicates.push(other),
-    }
-}
-
 // For a given JOIN logical plan, determine whether each side of the join is preserved.
 // We say a join side is preserved if the join returns all or a subset of the rows from
 // the relevant side, such that each row of the output table directly maps to a row of
@@ -306,7 +288,7 @@ fn optimize(plan: &LogicalPlan, mut state: State) -> Result<LogicalPlan> {
         LogicalPlan::Analyze { .. } => push_down(&state, plan),
         LogicalPlan::Filter(Filter { input, predicate }) => {
             let mut predicates = vec![];
-            split_members(predicate, &mut predicates);
+            utils::split_members(predicate, &mut predicates);
 
             // Predicates without referencing columns (WHERE FALSE, WHERE 1=1, etc.)
             let mut no_col_predicates = vec![];

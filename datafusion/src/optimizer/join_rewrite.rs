@@ -88,24 +88,6 @@ fn expr_removes_nulls(
     }
 }
 
-/// converts "A AND B AND C" => [A, B, C]
-fn split_members(predicate: &Expr) -> Vec<&Expr> {
-    match predicate {
-        Expr::BinaryExpr {
-            right,
-            op: Operator::And,
-            left,
-        } => {
-            let mut exprs = vec![];
-            exprs.append(&mut split_members(left));
-            exprs.append(&mut split_members(right));
-            exprs
-        }
-        Expr::Alias(expr, _) => split_members(expr),
-        other => vec![other],
-    }
-}
-
 fn join_side_has_null_removing_filter(
     predicates: &Vec<&Expr>,
     side: &LogicalPlan,
@@ -155,7 +137,8 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
         ..
     } = join;
 
-    let all_predicates = split_members(&predicate);
+    let mut all_predicates = vec![];
+    utils::split_members(&predicate, &mut all_predicates);
 
     let left_has_null_removing_filter =
         join_side_has_null_removing_filter(&all_predicates, left);
