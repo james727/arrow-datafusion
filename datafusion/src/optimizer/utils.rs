@@ -532,6 +532,17 @@ pub fn split_members<'a>(predicate: &'a Expr, predicates: &mut Vec<&'a Expr>) {
     }
 }
 
+/// Construct a HashSet containing all columns for a schema. Contains a fully qualified and
+/// unqualified variant for each column in the schema.
+pub fn get_all_columns_for_schema(schema: DFSchemaRef) -> HashSet<Column> {
+    schema
+        .fields()
+        .iter()
+        .map(|f| [f.qualified_column(), f.unqualified_column()])
+        .flatten()
+        .collect::<HashSet<_>>();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

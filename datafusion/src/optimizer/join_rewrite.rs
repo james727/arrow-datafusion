@@ -92,13 +92,7 @@ fn join_side_has_null_removing_filter(
     predicates: &Vec<&Expr>,
     side: &LogicalPlan,
 ) -> bool {
-    let side_columns = side
-        .schema()
-        .fields()
-        .iter()
-        .map(|f| [f.qualified_column(), f.unqualified_column()])
-        .flatten()
-        .collect::<HashSet<_>>();
+    let side_columns = utils::get_all_columns_for_schema(side.schema().clone());
 
     let mut null_removing_filters = vec![];
     predicates

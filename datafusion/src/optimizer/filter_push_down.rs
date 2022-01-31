@@ -206,20 +206,7 @@ fn get_pushable_join_predicates<'a>(
     if !preserved {
         return (vec![], vec![]);
     }
-
-    let schema_columns = schema
-        .fields()
-        .iter()
-        .map(|f| {
-            [
-                f.qualified_column(),
-                // we need to push down filter using unqualified column as well
-                f.unqualified_column(),
-            ]
-        })
-        .flatten()
-        .collect::<HashSet<_>>();
-
+    let schema_columns = utils::get_all_columns_for_schema(schema.into());
     state
         .filters
         .iter()
