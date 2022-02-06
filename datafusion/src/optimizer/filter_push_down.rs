@@ -18,6 +18,7 @@
 //! Filter Push Down optimizer rule ensures that filters are applied as early as possible in the plan
 
 use crate::datasource::datasource::TableProviderFilterPushDown;
+use crate::error::Result;
 use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{Aggregate, Filter, Join, Projection};
 use crate::logical_plan::{
@@ -26,7 +27,6 @@ use crate::logical_plan::{
 use crate::logical_plan::{DFSchema, Expr};
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
-use crate::{error::Result, logical_plan::Operator};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -209,7 +209,7 @@ fn get_pushable_join_predicates<'a>(
     if !preserved {
         return (vec![], vec![]);
     }
-    let schema_columns = utils::get_all_columns_for_schema(schema.into());
+    let schema_columns = utils::get_all_columns_for_schema(schema.clone().into());
     state
         .filters
         .iter()

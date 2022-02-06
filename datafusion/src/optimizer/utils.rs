@@ -540,7 +540,7 @@ pub fn get_all_columns_for_schema(schema: DFSchemaRef) -> HashSet<Column> {
         .iter()
         .map(|f| [f.qualified_column(), f.unqualified_column()])
         .flatten()
-        .collect::<HashSet<_>>();
+        .collect::<HashSet<_>>()
 }
 
 #[cfg(test)]

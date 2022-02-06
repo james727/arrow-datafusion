@@ -20,7 +20,7 @@
 use crate::error::Result;
 use crate::execution::context::{ExecutionContextState, ExecutionProps};
 use crate::logical_plan::plan::{Filter, Join};
-use crate::logical_plan::{Column, DFSchemaRef, JoinType, Operator};
+use crate::logical_plan::{Column, DFSchemaRef, JoinType};
 use crate::logical_plan::{Expr, LogicalPlan};
 use crate::optimizer::optimizer::OptimizerRule;
 use crate::optimizer::utils;
@@ -121,7 +121,7 @@ fn join_side_has_null_removing_filter(
     null_removing_filters.len() > 0
 }
 
-fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
+fn rewrite_join(filter: &Filter, join: &Join) -> Result<Join> {
     let Filter { predicate, .. } = filter;
     let Join {
         left,
@@ -155,18 +155,15 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<LogicalPlan> {
         jt => jt.clone(),
     };
 
-    Ok(LogicalPlan::Filter(Filter {
-        predicate: predicate.clone(),
-        input: Arc::new(LogicalPlan::Join(Join {
-            left: left.clone(),
-            right: right.clone(),
-            on: on.clone(),
-            join_type: new_join_type,
-            join_constraint: join_constraint.clone(),
-            schema: schema.clone(),
-            null_equals_null: null_equals_null.clone(),
-        })),
-    }))
+    Ok(Join {
+        left: left.clone(),
+        right: right.clone(),
+        on: on.clone(),
+        join_type: new_join_type,
+        join_constraint: join_constraint.clone(),
+        schema: schema.clone(),
+        null_equals_null: null_equals_null.clone(),
+    })
 }
 
 impl OptimizerRule for JoinRewrite {
@@ -178,7 +175,13 @@ impl OptimizerRule for JoinRewrite {
     ) -> Result<LogicalPlan> {
         if let LogicalPlan::Filter(filter) = plan {
             if let LogicalPlan::Join(join) = filter.input.as_ref() {
-                return rewrite_join(filter, join);
+                let join = LogicalPlan::Join(rewrite_join(filter, join)?);
+                let input =
+                    optimize_children(self, &join, execution_props, execution_state)?;
+                return Ok(LogicalPlan::Filter(Filter {
+                    predicate: filter.predicate.clone(),
+                    input: Arc::new(input),
+                }));
             }
         }
 
