@@ -103,15 +103,13 @@ fn join_side_has_null_removing_filter(
         .try_for_each::<_, Result<()>>(|predicate| {
             let mut predicate_columns: HashSet<Column> = HashSet::new();
             utils::expr_to_columns(predicate, &mut predicate_columns)?;
-
-            let predicate_only_references_side =
-                predicate_columns.is_subset(&side_columns);
-            let predicate_is_null_removing = expr_removes_nulls(
-                predicate,
-                side.schema(),
-                &ExecutionContextState::new(),
-            )?;
-            if predicate_only_references_side && predicate_is_null_removing {
+            if predicate_columns.is_subset(&side_columns)
+                && expr_removes_nulls(
+                    predicate,
+                    side.schema(),
+                    &ExecutionContextState::new(),
+                )?
+            {
                 null_removing_filters.push(predicate);
             }
 
@@ -143,8 +141,8 @@ fn rewrite_join(filter: &Filter, join: &Join) -> Result<Join> {
         join_side_has_null_removing_filter(&all_predicates, right);
 
     let new_join_type = match join_type {
-        JoinType::Right if right_has_null_removing_filter => JoinType::Inner,
-        JoinType::Left if left_has_null_removing_filter => JoinType::Inner,
+        JoinType::Right if left_has_null_removing_filter => JoinType::Inner,
+        JoinType::Left if right_has_null_removing_filter => JoinType::Inner,
         JoinType::Full
             if right_has_null_removing_filter && left_has_null_removing_filter =>
         {
@@ -195,8 +193,8 @@ impl OptimizerRule for JoinRewrite {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logical_plan::{col, exp, DFField, DFSchema};
-    use crate::physical_plan::expressions::is_null;
+    use crate::logical_plan::{and, col, DFField, DFSchema, LogicalPlanBuilder};
+    use crate::test::{test_table_scan, test_table_scan_with_name};
     use arrow::datatypes::{DataType, Field};
 
     fn check_expr_removes_nulls_output(expr: &Expr, expected: bool) -> Result<()> {
@@ -238,5 +236,252 @@ mod tests {
     fn expr_removes_nulls_col_is_not_null() -> Result<()> {
         let expr = col("a").is_not_null();
         check_expr_removes_nulls_output(&expr, true)
+    }
+
+    fn assert_optimized_plan_eq(plan: &LogicalPlan, expected: &str) {
+        let rule = JoinRewrite::new();
+        let optimized_plan = rule
+            .optimize(plan, &ExecutionProps::new(), &ExecutionContextState::new())
+            .expect("failed to optimize plan");
+        let formatted_plan = format!("{:?}", optimized_plan);
+        assert_eq!(formatted_plan, expected);
+    }
+
+    fn construct_join_plan(join_type: JoinType) -> Result<LogicalPlanBuilder> {
+        let table_scan = test_table_scan()?;
+        let left = LogicalPlanBuilder::from(table_scan)
+            .project(vec![col("a"), col("c")])?
+            .build()?;
+        let right_table_scan = test_table_scan_with_name("test2")?;
+        let right = LogicalPlanBuilder::from(right_table_scan)
+            .project(vec![col("a"), col("b")])?
+            .build()?;
+        LogicalPlanBuilder::from(left).join(
+            &right,
+            join_type,
+            (vec![Column::from_name("a")], vec![Column::from_name("a")]),
+        )
+    }
+
+    #[test]
+    fn join_rewrite_right_to_inner() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Right)?
+            .filter(col("c").is_not_null())?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test.c IS NOT NULL\
+            \n  Right Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        let expected = "\
+            Filter: #test.c IS NOT NULL\
+            \n  Inner Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_left_to_inner() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Left)?
+            .filter(col("b").is_not_null())?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test2.b IS NOT NULL\
+            \n  Left Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        let expected = "\
+            Filter: #test2.b IS NOT NULL\
+            \n  Inner Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_full_to_right() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Full)?
+            .filter(col("b").is_not_null())?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test2.b IS NOT NULL\
+            \n  Full Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        let expected = "\
+            Filter: #test2.b IS NOT NULL\
+            \n  Right Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_full_to_left() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Full)?
+            .filter(col("c").is_not_null())?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test.c IS NOT NULL\
+            \n  Full Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        let expected = "\
+            Filter: #test.c IS NOT NULL\
+            \n  Left Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_full_to_inner() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Full)?
+            .filter(and(col("b").is_not_null(), col("c").is_not_null()))?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test2.b IS NOT NULL AND #test.c IS NOT NULL\
+            \n  Full Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        let expected = "\
+            Filter: #test2.b IS NOT NULL AND #test.c IS NOT NULL\
+            \n  Inner Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None";
+
+        assert_optimized_plan_eq(&plan, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_right_noop() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Right)?
+            // The filter on the left side does not remove nulls.
+            .filter(and(col("c").is_null(), col("b").is_not_null()))?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test.c IS NULL AND #test2.b IS NOT NULL\
+            \n  Right Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        // We expect a noop here - i.e. the optimized plan == the unoptimized plan.
+        assert_optimized_plan_eq(&plan, &format!("{:?}", plan));
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_left_noop() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Left)?
+            // The filter on the right side does not remove nulls.
+            .filter(and(col("c").is_not_null(), col("b").is_null()))?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test.c IS NOT NULL AND #test2.b IS NULL\
+            \n  Left Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        // We expect a noop here - i.e. the optimized plan == the unoptimized plan.
+        assert_optimized_plan_eq(&plan, &format!("{:?}", plan));
+        Ok(())
+    }
+
+    #[test]
+    fn join_rewrite_full_noop() -> Result<()> {
+        let plan = construct_join_plan(JoinType::Full)?
+            // Neither of the filters remove nulls.
+            .filter(and(col("c").is_null(), col("b").is_null()))?
+            .build()?;
+
+        // not part of the test, just good to know:
+        assert_eq!(
+            format!("{:?}", plan),
+            "\
+            Filter: #test.c IS NULL AND #test2.b IS NULL\
+            \n  Full Join: #test.a = #test2.a\
+            \n    Projection: #test.a, #test.c\
+            \n      TableScan: test projection=None\
+            \n    Projection: #test2.a, #test2.b\
+            \n      TableScan: test2 projection=None"
+        );
+
+        // We expect a noop here - i.e. the optimized plan == the unoptimized plan.
+        assert_optimized_plan_eq(&plan, &format!("{:?}", plan));
+        Ok(())
     }
 }
